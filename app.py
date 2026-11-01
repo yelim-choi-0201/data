@@ -15,8 +15,8 @@ st.set_page_config(
 # -----------------------------------
 # 2. 데이터 읽기 및 정제
 # -----------------------------------
-data_path = '/content/drive/MyDrive/죽전_승하차인원/raw.csv'
-# data_path = 'raw.csv'
+# data_path = '/content/drive/MyDrive/죽전_승하차인원/raw.csv'
+data_path = 'raw.csv'
 
 @st.cache_data
 def load_data():
