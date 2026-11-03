@@ -1,4 +1,6 @@
 
+%%writefile app.py
+
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -15,13 +17,17 @@ st.set_page_config(
 # -----------------------------------
 # 2. 데이터 읽기 및 정제
 # -----------------------------------
-# data_path = '/content/drive/MyDrive/죽전_승하차인원/raw.csv'
 data_path = 'raw.csv'
 
 @st.cache_data
 def load_data():
 
-    raw = pd.read_csv(data_path)
+    # UTF-16 인코딩, 보고서 상단 5줄 제외
+    raw = pd.read_csv(
+        data_path,
+        encoding='utf-16',
+        skiprows=5
+    )
 
     # 역명 컬럼명 변경
     if '역명' not in raw.columns and 'Unnamed: 5' in raw.columns:
@@ -32,19 +38,19 @@ def load_data():
 
     # 날짜 데이터 변환
     clean['운행일자'] = pd.to_datetime(
-        clean['운행일자'],
+        clean['운행일자'].astype(str),
         format='%Y%m%d',
         errors='coerce'
     )
 
     # 승차 및 하차 인원 숫자 변환
     clean['전철승차인원수'] = pd.to_numeric(
-        clean['전철승차인원수'].astype(str).str.replace(',', ''),
+        clean['전철승차인원수'].astype(str).str.replace(',', '', regex=False),
         errors='coerce'
     )
 
     clean['전철하차인원수'] = pd.to_numeric(
-        clean['전철하차인원수'].astype(str).str.replace(',', ''),
+        clean['전철하차인원수'].astype(str).str.replace(',', '', regex=False),
         errors='coerce'
     )
 
@@ -64,6 +70,7 @@ try:
     clean = load_data()
 except Exception as e:
     st.error(f"데이터를 불러오지 못했습니다: {e}")
+    st.info("raw.csv 파일이 app.py와 같은 폴더에 있는지 확인하세요.")
     st.stop()
 
 
@@ -225,18 +232,19 @@ st.plotly_chart(fig2, use_container_width=True)
 
 
 # -----------------------------------
-# 9. 개별 역 상세 분석
+# 9. 일별 승하차 인원 분석
+#    역명 선택 없이 선택된 역 전체 합산
 # -----------------------------------
-st.subheader('🔍 개별 역 상세 분석')
+st.subheader('🔍 일별 승하차 인원 분석')
 
-detail_station = st.selectbox(
-    '분석할 역을 선택하세요',
-    sorted(filtered['역명'].unique())
-)
+detail = filtered.groupby(
+    '운행일자'
+)[['전철승차인원수', '전철하차인원수']].sum().reset_index()
 
-detail = grouped[
-    grouped['역명'] == detail_station
-].sort_values('운행일자')
+detail = detail.rename(columns={
+    '전철승차인원수': '승차인원수',
+    '전철하차인원수': '하차인원수'
+})
 
 detail_long = detail.melt(
     id_vars='운행일자',
@@ -250,7 +258,7 @@ fig3 = px.line(
     y='인원수',
     color='구분',
     markers=True,
-    title=f'{detail_station}역 일별 승하차 인원'
+    title='일별 승차 및 하차 인원'
 )
 
 fig3.update_layout(
