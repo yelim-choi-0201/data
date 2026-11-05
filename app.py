@@ -99,7 +99,7 @@ st.markdown(
 st.caption("역별·날짜별 전철 승차 및 하차 인원을 확인할 수 있는 데이터 분석 대시보드입니다.")
 
 # 데이터 불러오기
-DATA_PATH = "raw2.csv"
+DATA_PATH = "raw.csv"
 
 @st.cache_data
 def load_data(file_path):
