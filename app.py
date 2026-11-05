@@ -1,184 +1,230 @@
 
-
+import io
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-from io import BytesIO
 
-# -----------------------------------
-# 1. 페이지 설정
-# -----------------------------------
 st.set_page_config(
-    page_title="지하철 승하차 분석",
+    page_title="죽전관리역 승하차인원 데이터 대시보드",
     page_icon="🚇",
     layout="wide"
 )
 
-# -----------------------------------
-# 2. 디자인 CSS
-# -----------------------------------
+# 디자인 및 통계 숫자 자동 크기 조절
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #f5f7fb;
-    }
+.stApp {background:#F4F8FC;}
+.block-container {padding-top:1.8rem; max-width:1500px;}
 
-    .main-title {
-        background: linear-gradient(120deg, #14213d, #263f68);
-        padding: 28px 32px;
-        border-radius: 16px;
-        color: white;
-        margin-bottom: 25px;
-    }
+.dashboard-title {
+    background:linear-gradient(100deg,#A9D8F5,#DCC8F2,#F5C9D8);
+    padding:22px 26px;
+    border-radius:20px;
+    color:#34495E;
+    font-size:clamp(22px,3vw,34px);
+    font-weight:800;
+    margin-bottom:22px;
+}
 
-    .main-title h1 {
-        color: white;
-        font-size: 30px;
-        margin-bottom: 8px;
-    }
+section[data-testid="stSidebar"] {background:#EDF6FC;}
 
-    .main-title p {
-        color: #dce6f5;
-        font-size: 15px;
-        margin-bottom: 0;
-    }
+div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+    background:#D8ECFA;
+    color:#315A78;
+    border:1px solid #B8DDF4;
+    border-radius:8px;
+}
 
-    div[data-testid="stMetric"] {
-        background-color: white;
-        border: 1px solid #e5eaf2;
-        padding: 18px;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(30, 50, 80, 0.05);
-    }
+button[data-baseweb="tab"] {
+    background:#EAF3FA;
+    border-radius:10px 10px 0 0;
+    margin-right:5px;
+}
 
-    div[data-testid="stTabs"] button {
-        font-weight: 600;
-        font-size: 15px;
-    }
+button[data-baseweb="tab"][aria-selected="true"] {
+    background:#D7EAF8;
+    color:#315A78;
+    font-weight:700;
+}
 
-    .section-caption {
-        color: #64748b;
-        font-size: 13px;
-        margin-bottom: 15px;
-    }
+.stDownloadButton button {
+    background:#D9ECF8;
+    color:#315A78;
+    border:1px solid #B8DDF4;
+    border-radius:10px;
+}
 
-    div[data-testid="stDownloadButton"] button {
-        background-color: #263f68;
-        color: white;
-        border-radius: 8px;
-        border: none;
-    }
+/* 주요 통계 카드 */
+div[data-testid="stMetric"] {
+    background:white;
+    border:1px solid #E5EDF5;
+    padding:clamp(10px,1.5vw,22px);
+    border-radius:18px;
+    min-width:0;
+    overflow:visible;
+    box-shadow:0 3px 12px rgba(100,130,160,0.07);
+}
 
-    div[data-testid="stDownloadButton"] button:hover {
-        background-color: #14213d;
-        color: white;
-    }
+div[data-testid="stMetricValue"] {
+    width:100%;
+    min-width:0;
+}
+
+div[data-testid="stMetricValue"] > div {
+    font-size:clamp(16px,2.2vw,34px) !important;
+    white-space:normal !important;
+    overflow:visible !important;
+    text-overflow:clip !important;
+    word-break:keep-all;
+    overflow-wrap:anywhere;
+    line-height:1.25;
+}
+
+div[data-testid="stMetricLabel"] {
+    font-size:clamp(12px,1.1vw,16px) !important;
+    white-space:normal !important;
+}
+
+div[data-testid="stDataFrame"] {
+    border:1px solid #E5EDF5;
+    border-radius:12px;
+}
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown(
+    '<div class="dashboard-title">🚇 죽전관리역 승하차인원 데이터 대시보드</div>',
+    unsafe_allow_html=True
+)
+st.caption("역별·날짜별 전철 승차 및 하차 인원을 확인할 수 있는 데이터 분석 대시보드입니다.")
 
-# -----------------------------------
-# 3. 데이터 읽기 및 정제
-# -----------------------------------
-data_path = "raw.csv"
-
+# 데이터 불러오기
+DATA_PATH = "raw2.csv"
 
 @st.cache_data
-def load_data():
+def load_data(file_path):
+    read_options = [
+        {"encoding": "utf-16", "skiprows": 5},
+        {"encoding": "utf-16"},
+        {"encoding": "utf-8-sig"},
+        {"encoding": "cp949"}
+    ]
 
-    raw = pd.read_csv(
-        data_path,
-        encoding="utf-16",
-        skiprows=5
-    )
+    raw = None
+    errors = []
 
-    # 역명 컬럼명 변경
-    if '역명' not in raw.columns and 'Unnamed: 5' in raw.columns:
-        raw = raw.rename(columns={'Unnamed: 5': '역명'})
+    for options in read_options:
+        try:
+            candidate = pd.read_csv(file_path, **options)
+            if len(candidate.columns) > 1:
+                raw = candidate
+                break
+        except Exception as e:
+            errors.append(str(e))
 
-    clean = raw.drop_duplicates().copy()
+    if raw is None:
+        raise ValueError("CSV 파일을 읽을 수 없습니다. " + " / ".join(errors[-2:]))
 
-    # 날짜 변환
-    clean['운행일자'] = pd.to_datetime(
-        clean['운행일자'].astype(str),
-        format='%Y%m%d',
-        errors='coerce'
-    )
+    raw.columns = [str(c).strip() for c in raw.columns]
 
-    # 숫자 변환
-    for col in ['전철승차인원수', '전철하차인원수']:
-        clean[col] = pd.to_numeric(
-            clean[col].astype(str).str.replace(',', '', regex=False),
-            errors='coerce'
+    if "역명" not in raw.columns:
+        unnamed = [c for c in raw.columns if str(c).startswith("Unnamed")]
+        if unnamed:
+            raw = raw.rename(columns={unnamed[0]: "역명"})
+
+    required = [
+        "운행일자", "역명",
+        "전철승차인원수", "전철하차인원수"
+    ]
+
+    missing = [c for c in required if c not in raw.columns]
+    if missing:
+        raise ValueError(
+            "필수 열을 찾을 수 없습니다: "
+            + ", ".join(missing)
+            + "\n현재 열 이름: "
+            + ", ".join(raw.columns.astype(str))
         )
 
-    clean['역명'] = clean['역명'].astype(str).str.strip()
+    clean = raw[required].drop_duplicates().copy()
 
-    clean = clean.dropna(
-        subset=[
-            '운행일자',
-            '전철승차인원수',
-            '전철하차인원수'
-        ]
-    )
+    date_text = clean["운행일자"].astype(str).str.strip()
+    parsed = pd.to_datetime(date_text, format="%Y%m%d", errors="coerce")
+    fallback = pd.to_datetime(date_text, errors="coerce")
+    clean["운행일자"] = parsed.fillna(fallback)
 
-    clean = clean[clean['역명'] != '']
+    for col in ["전철승차인원수", "전철하차인원수"]:
+        clean[col] = pd.to_numeric(
+            clean[col].astype(str).str.replace(",", "", regex=False).str.strip(),
+            errors="coerce"
+        )
+
+    clean["역명"] = clean["역명"].astype(str).str.strip()
+
+    clean = clean.dropna(subset=[
+        "운행일자", "역명",
+        "전철승차인원수", "전철하차인원수"
+    ])
+    clean = clean[clean["역명"] != ""].copy()
+    clean["운행일자"] = clean["운행일자"].dt.normalize()
+
+    if clean.empty:
+        raise ValueError("전처리 후 분석할 데이터가 없습니다.")
 
     return clean
 
 
 try:
-    clean = load_data()
-
+    df = load_data(DATA_PATH)
+except FileNotFoundError:
+    st.error("raw2.csv 파일을 찾을 수 없습니다. app.py와 같은 폴더에 넣어 주세요.")
+    st.stop()
 except Exception as e:
-    st.error(f"데이터를 불러오지 못했습니다: {e}")
-    st.info("raw2.csv 파일이 app.py와 같은 폴더에 있는지 확인하세요.")
+    st.error(f"데이터를 불러오는 중 문제가 발생했습니다: {e}")
     st.stop()
 
 
-# -----------------------------------
-# 4. 제목 영역
-# -----------------------------------
-st.markdown("""
-<div class="main-title">
-    <h1>🚇 철도데이터 분석 대시보드</h1>
-    <p>지하철 역별 · 날짜별 승차 및 하차 인원 통합 분석</p>
-</div>
-""", unsafe_allow_html=True)
-
-
-# -----------------------------------
-# 5. 사이드바 필터
-# -----------------------------------
-st.sidebar.markdown("## 🔎 분석 조건 설정")
+# 사이드바 필터
+st.sidebar.markdown("## 🔎 데이터 조회 조건")
 st.sidebar.caption("조회할 역과 기간을 선택하세요.")
 
-station_list = sorted(clean['역명'].unique())
+station_list = sorted(df["역명"].unique().tolist())
 
-selected_station = st.sidebar.multiselect(
-    '역명 선택',
-    station_list,
-    default=station_list
+selected_stations = st.sidebar.multiselect(
+    "🏢 역명 선택",
+    options=station_list,
+    default=station_list,
+    placeholder="조회할 역을 선택하세요"
 )
 
-start_date = clean['운행일자'].min().date()
-end_date = clean['운행일자'].max().date()
+min_date = df["운행일자"].min().date()
+max_date = df["운행일자"].max().date()
 
-selected_date = st.sidebar.date_input(
-    '운행일자 선택',
-    value=(start_date, end_date)
+selected_dates = st.sidebar.date_input(
+    "📅 운행일자 선택",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
 )
 
-if len(selected_date) == 2:
-    date_start, date_end = selected_date
+if isinstance(selected_dates, (tuple, list)):
+    if len(selected_dates) == 2:
+        start_date, end_date = selected_dates
+    elif len(selected_dates) == 1:
+        start_date = end_date = selected_dates[0]
+    else:
+        start_date, end_date = min_date, max_date
 else:
-    date_start = date_end = selected_date[0]
+    start_date = end_date = selected_dates
 
+if not selected_stations:
+    st.warning("역명을 한 개 이상 선택해 주세요.")
+    st.stop()
 
-filtered = clean[
-    (clean['역명'].isin(selected_station)) &
-    (clean['운행일자'].dt.date >= date_start) &
-    (clean['운행일자'].dt.date <= date_end)
+filtered = df[
+    df["역명"].isin(selected_stations)
+    & (df["운행일자"].dt.date >= start_date)
+    & (df["운행일자"].dt.date <= end_date)
 ].copy()
 
 if filtered.empty:
@@ -186,335 +232,203 @@ if filtered.empty:
     st.stop()
 
 
-# -----------------------------------
-# 6. 주요 통계
-# -----------------------------------
+# 주요 승하차 통계
 st.markdown("### 📌 주요 승하차 통계")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4 = st.columns(4, gap="small")
 
-col1.metric(
-    "총 승차 인원",
-    f"{filtered['전철승차인원수'].sum():,.0f}명"
+col1.metric("🩵 총 승차 인원", f"{filtered['전철승차인원수'].sum():,.0f}명")
+col2.metric("🌸 총 하차 인원", f"{filtered['전철하차인원수'].sum():,.0f}명")
+col3.metric("🏢 분석 역 개수", f"{filtered['역명'].nunique():,}개")
+col4.metric("📅 운행일수", f"{filtered['운행일자'].nunique():,}일")
+
+st.divider()
+
+
+# 날짜별 집계
+daily = (
+    filtered.groupby("운행일자", as_index=False)[
+        ["전철승차인원수", "전철하차인원수"]
+    ].sum().sort_values("운행일자")
 )
 
-col2.metric(
-    "총 하차 인원",
-    f"{filtered['전철하차인원수'].sum():,.0f}명"
+# 역별 집계
+station = (
+    filtered.groupby("역명", as_index=False)[
+        ["전철승차인원수", "전철하차인원수"]
+    ].sum().sort_values("전철승차인원수", ascending=False)
 )
 
-col3.metric(
-    "분석 역 개수",
-    f"{filtered['역명'].nunique()}개"
+# 역명 및 운행일자별 집계
+grouped = (
+    filtered.groupby(["역명", "운행일자"], as_index=False)[
+        ["전철승차인원수", "전철하차인원수"]
+    ].sum().sort_values(["역명", "운행일자"])
 )
 
-col4.metric(
-    "운행일수",
-    f"{filtered['운행일자'].nunique()}일"
-)
+PASTEL_BLUE = "#9BCFF0"
+PASTEL_PINK = "#F2B6CC"
 
-st.caption(
-    f"조회 기간: {date_start} ~ {date_end}  |  "
-    f"선택 역: {len(selected_station)}개"
-)
+COLOR_MAP = {
+    "승차인원수": PASTEL_BLUE,
+    "하차인원수": PASTEL_PINK
+}
 
 
-# -----------------------------------
-# 7. 데이터 집계
-# -----------------------------------
-grouped = filtered.groupby(
-    ['역명', '운행일자']
-).agg(
-    승차인원수=('전철승차인원수', 'sum'),
-    하차인원수=('전철하차인원수', 'sum')
-).reset_index()
-
-# 날짜순 정렬
-grouped = grouped.sort_values(
-    ['운행일자', '역명']
-)
+def make_long(data, index_col):
+    long_data = data.melt(
+        id_vars=[index_col],
+        value_vars=["전철승차인원수", "전철하차인원수"],
+        var_name="구분",
+        value_name="인원수"
+    )
+    long_data["구분"] = long_data["구분"].map({
+        "전철승차인원수": "승차인원수",
+        "전철하차인원수": "하차인원수"
+    })
+    return long_data
 
 
-# 날짜별 전체 합계
-daily = grouped.groupby(
-    '운행일자'
-)[['승차인원수', '하차인원수']].sum().reset_index()
+def make_excel(data, sheet_name):
+    output = io.BytesIO()
+    export_data = data.copy()
 
-daily_long = daily.melt(
-    id_vars='운행일자',
-    var_name='구분',
-    value_name='인원수'
-)
+    if "운행일자" in export_data.columns:
+        export_data["운행일자"] = pd.to_datetime(
+            export_data["운행일자"], errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
 
-
-# 역별 합계
-station_summary = grouped.groupby(
-    '역명'
-)[['승차인원수', '하차인원수']].sum().reset_index()
-
-station_long = station_summary.melt(
-    id_vars='역명',
-    var_name='구분',
-    value_name='인원수'
-)
-
-
-# 일별 상세 집계
-detail = filtered.groupby(
-    '운행일자'
-)[['전철승차인원수', '전철하차인원수']].sum().reset_index()
-
-detail = detail.rename(columns={
-    '전철승차인원수': '승차인원수',
-    '전철하차인원수': '하차인원수'
-})
-
-
-# -----------------------------------
-# 8. 엑셀 다운로드 함수
-# -----------------------------------
-def make_excel(data, sheet_name="분석데이터"):
-
-    output = BytesIO()
-
-    excel_data = data.copy()
-
-    # 엑셀 날짜 표시에서 시간 제거
-    if '운행일자' in excel_data.columns:
-        excel_data['운행일자'] = pd.to_datetime(
-            excel_data['운행일자']
-        ).dt.strftime('%Y-%m-%d')
-
-    with pd.ExcelWriter(
-        output,
-        engine='openpyxl'
-    ) as writer:
-
-        excel_data.to_excel(
-            writer,
-            index=False,
-            sheet_name=sheet_name
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        export_data.to_excel(
+            writer, index=False, sheet_name=sheet_name
         )
 
-        worksheet = writer.sheets[sheet_name]
-
-        # 열 너비 자동 조정
-        for column_cells in worksheet.columns:
-            max_length = max(
-                len(str(cell.value)) if cell.value is not None else 0
-                for cell in column_cells
-            )
-
-            worksheet.column_dimensions[
-                column_cells[0].column_letter
-            ].width = min(max_length + 4, 25)
-
-        # 첫 행 고정 및 필터
-        worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = worksheet.dimensions
-
     output.seek(0)
-
     return output.getvalue()
 
 
-# -----------------------------------
-# 9. 탭 구성
-# -----------------------------------
-st.divider()
-
+# 분석 탭
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 날짜별 승하차 인원 추이",
-    "📊 역별 승하차 인원 비교",
-    "🔍 일별 승하차 인원 분석",
+    "🏢 역별 승하차 인원 비교",
+    "📅 일별 승하차 인원 분석",
     "📋 역명 및 운행일자별 데이터"
 ])
 
 
-# -----------------------------------
-# TAB 1. 날짜별 승하차 인원 추이
-# -----------------------------------
+# 탭 1: 날짜별 추이
 with tab1:
+    st.subheader("날짜별 승하차 인원 추이")
 
-    st.subheader("📈 날짜별 승하차 인원 추이")
-
-    st.markdown(
-        '<p class="section-caption">선택한 역 전체의 날짜별 승차 및 하차 인원 변화입니다.</p>',
-        unsafe_allow_html=True
-    )
+    daily_long = make_long(daily, "운행일자")
 
     fig1 = px.line(
         daily_long,
-        x='운행일자',
-        y='인원수',
-        color='구분',
+        x="운행일자",
+        y="인원수",
+        color="구분",
         markers=True,
-        color_discrete_sequence=['#3478c8', '#f29e4c'],
-        title='일별 전철 승차 및 하차 인원'
+        color_discrete_map=COLOR_MAP,
+        labels={
+            "운행일자": "운행일자",
+            "인원수": "인원수(명)",
+            "구분": "구분"
+        }
     )
-
     fig1.update_layout(
-        xaxis_title='운행일자',
-        yaxis_title='인원수',
-        hovermode='x unified',
-        template='plotly_white',
-        legend_title='구분',
-        margin=dict(l=20, r=20, t=60, b=20)
+        hovermode="x unified",
+        plot_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        legend_title_text=""
     )
-
-    st.plotly_chart(
-        fig1,
-        use_container_width=True
-    )
-
-    st.markdown("#### 📋 날짜별 집계 데이터")
-    st.dataframe(
-        daily.assign(
-            운행일자=daily['운행일자'].dt.strftime('%Y-%m-%d')
-        ),
-        use_container_width=True,
-        hide_index=True
-    )
+    st.plotly_chart(fig1, use_container_width=True)
 
     st.download_button(
-        "📥 날짜별 데이터 엑셀 다운로드",
-        data=make_excel(daily, "날짜별승하차"),
-        file_name="날짜별_승하차인원.xlsx",
+        "📥 날짜별 승하차 통계 Excel 다운로드",
+        data=make_excel(daily, "날짜별 통계"),
+        file_name="날짜별_승하차_통계.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_daily"
     )
 
 
-# -----------------------------------
-# TAB 2. 역별 승하차 인원 비교
-# -----------------------------------
+# 탭 2: 역별 비교
 with tab2:
+    st.subheader("역별 승하차 인원 비교")
 
-    st.subheader("📊 역별 승하차 인원 비교")
-
-    st.markdown(
-        '<p class="section-caption">선택한 기간 동안 각 역의 승차 및 하차 인원을 비교합니다.</p>',
-        unsafe_allow_html=True
-    )
+    station_long = make_long(station, "역명")
 
     fig2 = px.bar(
         station_long,
-        x='역명',
-        y='인원수',
-        color='구분',
-        barmode='group',
-        color_discrete_sequence=['#3478c8', '#f29e4c'],
-        title='역별 승차 및 하차 인원 비교'
+        x="역명",
+        y="인원수",
+        color="구분",
+        barmode="group",
+        color_discrete_map=COLOR_MAP,
+        labels={
+            "역명": "역명",
+            "인원수": "인원수(명)",
+            "구분": "구분"
+        }
     )
-
     fig2.update_layout(
-        xaxis_title='역명',
-        yaxis_title='인원수',
-        template='plotly_white',
-        legend_title='구분',
-        margin=dict(l=20, r=20, t=60, b=20)
+        plot_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        legend_title_text="",
+        xaxis_tickangle=-35
     )
-
-    st.plotly_chart(
-        fig2,
-        use_container_width=True
-    )
-
-    st.markdown("#### 📋 역별 집계 데이터")
-    st.dataframe(
-        station_summary,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.plotly_chart(fig2, use_container_width=True)
 
     st.download_button(
-        "📥 역별 데이터 엑셀 다운로드",
-        data=make_excel(station_summary, "역별승하차"),
-        file_name="역별_승하차인원.xlsx",
+        "📥 역별 승하차 통계 Excel 다운로드",
+        data=make_excel(station, "역별 통계"),
+        file_name="역별_승하차_통계.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_station"
     )
 
 
-# -----------------------------------
-# TAB 3. 일별 승하차 인원 분석
-# -----------------------------------
+# 탭 3: 일별 분석
 with tab3:
+    st.subheader("일별 승하차 인원 분석")
+    st.caption("선택한 역 전체의 날짜별 승차 및 하차 인원을 합산하여 표시합니다.")
 
-    st.subheader("🔍 일별 승하차 인원 분석")
-
-    st.markdown(
-        '<p class="section-caption">역명 선택 없이 현재 필터에서 선택된 역들의 일별 승하차 인원을 합산합니다.</p>',
-        unsafe_allow_html=True
+    fig3 = px.bar(
+        daily_long,
+        x="운행일자",
+        y="인원수",
+        color="구분",
+        barmode="group",
+        color_discrete_map=COLOR_MAP,
+        labels={
+            "운행일자": "운행일자",
+            "인원수": "인원수(명)",
+            "구분": "구분"
+        }
     )
-
-    detail_long = detail.melt(
-        id_vars='운행일자',
-        var_name='구분',
-        value_name='인원수'
-    )
-
-    fig3 = px.line(
-        detail_long,
-        x='운행일자',
-        y='인원수',
-        color='구분',
-        markers=True,
-        color_discrete_sequence=['#3478c8', '#f29e4c'],
-        title='일별 승차 및 하차 인원'
-    )
-
     fig3.update_layout(
-        xaxis_title='운행일자',
-        yaxis_title='인원수',
-        hovermode='x unified',
-        template='plotly_white',
-        legend_title='구분',
-        margin=dict(l=20, r=20, t=60, b=20)
+        plot_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        legend_title_text="",
+        xaxis_tickangle=-35
     )
-
-    st.plotly_chart(
-        fig3,
-        use_container_width=True
-    )
-
-    st.markdown("#### 📋 일별 상세 데이터")
-
-    st.dataframe(
-        detail.assign(
-            운행일자=detail['운행일자'].dt.strftime('%Y-%m-%d')
-        ),
-        use_container_width=True,
-        hide_index=True
-    )
+    st.plotly_chart(fig3, use_container_width=True)
 
     st.download_button(
-        "📥 일별 상세 데이터 엑셀 다운로드",
-        data=make_excel(detail, "일별상세"),
-        file_name="일별_승하차_상세.xlsx",
+        "📥 일별 승하차 분석 Excel 다운로드",
+        data=make_excel(daily, "일별 분석"),
+        file_name="일별_승하차_분석.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="download_detail"
+        key="download_daily_analysis"
     )
 
 
-# -----------------------------------
-# TAB 4. 역명 및 운행일자별 데이터
-# -----------------------------------
+# 탭 4: 상세 데이터
 with tab4:
+    st.subheader("역명 및 운행일자별 승하차 데이터")
 
-    st.subheader("📋 역명 및 운행일자별 데이터")
-
-    st.markdown(
-        '<p class="section-caption">역과 날짜별 승차 및 하차 집계 결과입니다.</p>',
-        unsafe_allow_html=True
-    )
-
-    # 화면 표시용 날짜 형식 변경: 시간 제거
     display_grouped = grouped.copy()
-
-    display_grouped['운행일자'] = (
-        display_grouped['운행일자'].dt.strftime('%Y-%m-%d')
-    )
+    display_grouped["운행일자"] = display_grouped["운행일자"].dt.strftime("%Y-%m-%d")
 
     st.dataframe(
         display_grouped,
@@ -523,21 +437,38 @@ with tab4:
     )
 
     st.download_button(
-        "📥 역명 및 운행일자별 데이터 엑셀 다운로드",
-        data=make_excel(grouped, "역명별일자별"),
-        file_name="역명_운행일자별_승하차인원.xlsx",
+        "📥 역명 및 운행일자별 데이터 Excel 다운로드",
+        data=make_excel(grouped, "역명_운행일자별"),
+        file_name="역명_운행일자별_승하차_데이터.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_grouped"
     )
 
 
-# -----------------------------------
-# 10. 하단 안내
-# -----------------------------------
-st.divider()
+# 원본 데이터 미리보기
+with st.expander("원본 데이터 미리보기"):
+    st.write(f"필터링된 데이터 행 수: {len(filtered):,}행")
 
-st.caption(
-    "🚇 지하철 승하차 분석 대시보드 | "
-    "선택한 역과 운행일자 조건에 따라 분석 결과가 갱신됩니다."
-)
+    preview_num = st.slider(
+        "표시할 행 수",
+        min_value=5,
+        max_value=min(100, max(5, len(filtered))),
+        value=min(10, max(5, len(filtered))),
+        step=5
+    )
 
+    st.dataframe(
+        filtered.head(preview_num),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.download_button(
+        "📥 필터링된 원본 데이터 Excel 다운로드",
+        data=make_excel(filtered, "필터링 원본"),
+        file_name="필터링된_승하차_원본데이터.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_filtered"
+    )
+
+st.caption("※ 분석 결과는 선택한 역명과 운행일자 조건을 기준으로 집계됩니다.")
