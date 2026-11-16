@@ -154,19 +154,30 @@ st.sidebar.markdown("## 🔎 데이터 조회 조건")
 st.sidebar.caption("조회할 역과 기간을 선택하세요.")
 
 station_list = sorted(df["역명"].unique().tolist())
+# 기본 역명은 죽전으로 설정 (데이터에 없을 경우 첫 번째 역)
+default_stations = ["죽전"] if "죽전" in station_list else station_list[:1]
 selected_stations = st.sidebar.multiselect(
     "🏢 역명 선택",
     options=station_list,
-    default=station_list,
+    default=default_stations,
     placeholder="조회할 역을 선택하세요"
 )
 
 min_date = df["운행일자"].min().date()
 max_date = df["운행일자"].max().date()
 
+# 기본 조회기간은 2026년으로 설정하되, 실제 데이터 범위 안에서 지정
+year_2026_start = max(min_date, pd.Timestamp("2026-01-01").date())
+year_2026_end = min(max_date, pd.Timestamp("2026-12-31").date())
+if year_2026_start <= year_2026_end:
+    default_date_range = (year_2026_start, year_2026_end)
+else:
+    # 데이터에 2026년이 없는 경우에만 전체 데이터 기간 사용
+    default_date_range = (min_date, max_date)
+
 selected_dates = st.sidebar.date_input(
     "📅 운행일자 선택",
-    value=(min_date, max_date),
+    value=default_date_range,
     min_value=min_date,
     max_value=max_date
 )
@@ -281,11 +292,34 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 with tab1:
     st.subheader("날짜별 승하차 인원 추이")
-    daily_station_long = make_long(station_daily, "운행일자")
-    daily_station_long["역명"] = station_daily["역명"].repeat(2).to_numpy()
+    # 역명·운행일자를 유지한 상태로 승차/하차 데이터를 세로형으로 변환
+    daily_station_long = station_daily.melt(
+        id_vars=["역명", "운행일자"],
+        value_vars=["전철승차인원수", "전철하차인원수"],
+        var_name="구분",
+        value_name="인원수"
+    )
+    daily_station_long["구분"] = daily_station_long["구분"].map({
+        "전철승차인원수": "승차인원",
+        "전철하차인원수": "하차인원"
+    })
+
+    # 역마다 색상을 고정하고, 승차는 실선·하차는 점선으로 구분
+    station_palette = (
+        px.colors.qualitative.Pastel
+        + px.colors.qualitative.Safe
+        + px.colors.qualitative.Set3
+    )
+    station_color_map = {
+        name: station_palette[i % len(station_palette)]
+        for i, name in enumerate(sorted(station_daily["역명"].unique()))
+    }
     fig = px.line(
-        daily_station_long, x="운행일자", y="인원수", color="역명",
-        line_dash="구분", markers=True,
+        daily_station_long, x="운행일자", y="인원수",
+        color="역명", line_dash="구분",
+        color_discrete_map=station_color_map,
+        line_dash_map={"승차인원": "solid", "하차인원": "dash"},
+        markers=False,
         labels={"운행일자":"운행일자", "인원수":"인원수(명)", "역명":"역명", "구분":"승하차 구분"}
     )
     fig.update_layout(
