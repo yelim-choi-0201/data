@@ -83,7 +83,7 @@ def load_data(file_path):
     raw = raw.rename(columns={"Unnamed: 5": "역명"})
 
     required = [
-        "운행일자", "역명",
+        "운행일자", "역명", "운행요일구분",
         "전철승차인원수", "전철하차인원수"
     ]
     missing = [c for c in required if c not in raw.columns]
@@ -113,8 +113,9 @@ def load_data(file_path):
 
     # 역명은 Unnamed: 5 열에서 가져옴
     clean["역명"] = clean["역명"].astype(str).str.strip()
+    clean["운행요일구분"] = clean["운행요일구분"].astype(str).str.strip()
 
-    # 날짜·역명·승하차 값이 유효한 행만 유지
+    # 날짜·역명·요일·승하차 값이 유효한 행만 유지
     clean = clean.dropna(subset=[
         "운행일자", "전철승차인원수", "전철하차인원수"
     ])
@@ -198,11 +199,16 @@ if filtered.empty:
 # 주요 통계
 # -----------------------------
 st.markdown("### 📌 주요 승하차 통계")
-c1, c2, c3, c4 = st.columns(4, gap="small")
-c1.metric("🩵 총 승차 인원", f"{filtered['전철승차인원수'].sum():,.0f}명")
-c2.metric("🌸 총 하차 인원", f"{filtered['전철하차인원수'].sum():,.0f}명")
-c3.metric("🏢 분석 역 개수", f"{filtered['역명'].nunique():,}개")
-c4.metric("📅 운행일수", f"{filtered['운행일자'].nunique():,}일")
+c1, c2, c3, c4, c5 = st.columns(5, gap="small")
+operation_days = filtered["운행일자"].nunique()
+total_boarding = filtered["전철승차인원수"].sum()
+total_alighting = filtered["전철하차인원수"].sum()
+avg_daily_transport = (total_boarding + total_alighting) / operation_days if operation_days else 0
+c1.metric("🩵 총 승차 인원", f"{total_boarding:,.0f}명")
+c2.metric("🌸 총 하차 인원", f"{total_alighting:,.0f}명")
+c3.metric("🚉 일평균 수송인원", f"{avg_daily_transport:,.0f}명")
+c4.metric("🏢 분석 역 개수", f"{filtered['역명'].nunique():,}개")
+c5.metric("📅 운행일수", f"{operation_days:,}일")
 st.divider()
 
 # -----------------------------
@@ -212,6 +218,13 @@ daily = (
     filtered.groupby("운행일자", as_index=False)[
         ["전철승차인원수", "전철하차인원수"]
     ].sum().sort_values("운행일자")
+)
+
+# 역명·날짜별 승하차 집계(역별 색상 범례 그래프에 사용)
+station_daily = (
+    filtered.groupby(["역명", "운행일자"], as_index=False)[
+        ["전철승차인원수", "전철하차인원수"]
+    ].sum().sort_values(["역명", "운행일자"])
 )
 
 station = (
@@ -258,20 +271,22 @@ def make_excel(data, sheet_name):
 # -----------------------------
 # 탭 1~4
 # -----------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📈 날짜별 승하차 인원 추이",
     "🏢 역별 승하차 인원 비교",
     "📅 일별 승하차 인원 분석",
-    "📋 역명 및 운행일자별 데이터"
+    "📋 역명 및 운행일자별 데이터",
+    "🗓️ 평일·주말 수송량 비교"
 ])
 
 with tab1:
     st.subheader("날짜별 승하차 인원 추이")
-    daily_long = make_long(daily, "운행일자")
+    daily_station_long = make_long(station_daily, "운행일자")
+    daily_station_long["역명"] = station_daily["역명"].repeat(2).to_numpy()
     fig = px.line(
-        daily_long, x="운행일자", y="인원수", color="구분",
-        markers=True, color_discrete_map=COLOR_MAP,
-        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "구분":"구분"}
+        daily_station_long, x="운행일자", y="인원수", color="역명",
+        line_dash="구분", markers=True,
+        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "역명":"역명", "구분":"승하차 구분"}
     )
     fig.update_layout(
         hovermode="x unified", plot_bgcolor="white",
@@ -290,9 +305,9 @@ with tab2:
     st.subheader("역별 승하차 인원 비교")
     station_long = make_long(station, "역명")
     fig = px.bar(
-        station_long, x="역명", y="인원수", color="구분",
-        barmode="group", color_discrete_map=COLOR_MAP,
-        labels={"역명":"역명", "인원수":"인원수(명)", "구분":"구분"}
+        station_long, x="역명", y="인원수", color="역명",
+        barmode="group", facet_col="구분",
+        labels={"역명":"역명", "인원수":"인원수(명)", "구분":"승하차 구분"}
     )
     fig.update_layout(
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
@@ -311,9 +326,9 @@ with tab3:
     st.subheader("일별 승하차 인원 분석")
     st.caption("선택한 역 전체의 날짜별 승차 및 하차 인원을 합산합니다.")
     fig = px.bar(
-        daily_long, x="운행일자", y="인원수", color="구분",
-        barmode="group", color_discrete_map=COLOR_MAP,
-        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "구분":"구분"}
+        daily_station_long, x="운행일자", y="인원수", color="역명",
+        barmode="group", facet_col="구분",
+        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "역명":"역명", "구분":"승하차 구분"}
     )
     fig.update_layout(
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
@@ -341,6 +356,43 @@ with tab4:
         key="download_grouped"
     )
 
+with tab5:
+    st.subheader("평일·주말 일평균 수송량 비교")
+    st.caption("수송량은 승차 인원과 하차 인원의 합계이며, 평일(월~금)과 주말(토~일)의 날짜별 평균을 비교합니다.")
+
+    weekday_map = {"월": "평일", "화": "평일", "수": "평일", "목": "평일", "금": "평일", "토": "주말", "일": "주말"}
+    compare_source = filtered.copy()
+    compare_source["요일구분"] = compare_source["운행요일구분"].map(weekday_map)
+    compare_source = compare_source.dropna(subset=["요일구분"])
+    compare_source["수송인원수"] = compare_source["전철승차인원수"] + compare_source["전철하차인원수"]
+
+    # 역·날짜별 수송량을 먼저 계산한 뒤 평일/주말별 날짜 평균 산출
+    compare_daily = (
+        compare_source.groupby(["역명", "운행일자", "요일구분"], as_index=False)["수송인원수"]
+        .sum()
+    )
+    compare_avg = (
+        compare_daily.groupby(["역명", "요일구분"], as_index=False)["수송인원수"]
+        .mean().rename(columns={"수송인원수": "일평균 수송인원수"})
+    )
+    compare_avg["요일구분"] = pd.Categorical(compare_avg["요일구분"], ["평일", "주말"], ordered=True)
+    compare_avg = compare_avg.sort_values(["역명", "요일구분"])
+
+    fig = px.bar(
+        compare_avg, x="요일구분", y="일평균 수송인원수", color="역명",
+        barmode="group",
+        labels={"요일구분": "구분", "일평균 수송인원수": "일평균 수송인원(명)", "역명": "역명"}
+    )
+    fig.update_layout(plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)", legend_title_text="역명")
+    st.plotly_chart(fig, use_container_width=True)
+    st.download_button(
+        "📥 평일·주말 수송량 비교 Excel 다운로드",
+        data=make_excel(compare_avg, "평일_주말_비교"),
+        file_name="평일_주말_일평균_수송량_비교.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_weekday_weekend"
+    )
+
 # -----------------------------
 # 원본 데이터 미리보기
 # -----------------------------
@@ -366,4 +418,4 @@ with st.expander("원본 데이터 미리보기"):
         key="download_filtered"
     )
 
-st.caption("※ 분석 결과는 선택한 역명과 운행일자 조건을 기준으로 집계됩니다.")
+st.caption("※ 분석 결과는 선택한 역명과 운행일자 조건을 기준으로 집계됩니다. 일평균 수송인원은 (총 승차+총 하차 인원) ÷ 운행일수로 산출합니다.")
