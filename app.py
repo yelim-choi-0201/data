@@ -2,6 +2,7 @@ import io
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="죽전관리역 승하차인원 데이터 대시보드",
@@ -50,6 +51,8 @@ div[data-testid="stMetricLabel"] {
     font-size:clamp(12px,1.1vw,16px) !important; white-space:normal !important;
 }
 div[data-testid="stDataFrame"] {border:1px solid #E5EDF5; border-radius:12px;}
+div[data-testid="stCheckbox"] label {padding:5px 9px; border-radius:10px;}
+@media print { section[data-testid="stSidebar"], header, footer, .stDownloadButton, button {display:none !important;} .block-container {max-width:100% !important;} }
 </style>
 """, unsafe_allow_html=True)
 
@@ -154,14 +157,15 @@ st.sidebar.markdown("## 🔎 데이터 조회 조건")
 st.sidebar.caption("조회할 역과 기간을 선택하세요.")
 
 station_list = sorted(df["역명"].unique().tolist())
-# 기본 역명은 죽전으로 설정 (데이터에 없을 경우 첫 번째 역)
 default_stations = ["죽전"] if "죽전" in station_list else station_list[:1]
-selected_stations = st.sidebar.multiselect(
-    "🏢 역명 선택",
-    options=station_list,
-    default=default_stations,
-    placeholder="조회할 역을 선택하세요"
-)
+st.sidebar.markdown("### 🏢 역명 선택")
+selected_stations = []
+station_cols = st.sidebar.columns(2)
+for i, name in enumerate(station_list):
+    with station_cols[i % 2]:
+        checked = st.checkbox(name, value=(name in default_stations), key=f"station_{i}_{name}")
+        if checked:
+            selected_stations.append(name)
 
 min_date = df["운행일자"].min().date()
 max_date = df["운행일자"].max().date()
@@ -172,14 +176,11 @@ year_2026_end = min(max_date, pd.Timestamp("2026-12-31").date())
 if year_2026_start <= year_2026_end:
     default_date_range = (year_2026_start, year_2026_end)
 else:
-    # 데이터에 2026년이 없는 경우에만 전체 데이터 기간 사용
     default_date_range = (min_date, max_date)
 
 selected_dates = st.sidebar.date_input(
-    "📅 운행일자 선택",
-    value=default_date_range,
-    min_value=min_date,
-    max_value=max_date
+    "📅 운행일자 선택", value=default_date_range,
+    min_value=min_date, max_value=max_date, format="YYYY/MM/DD"
 )
 
 if isinstance(selected_dates, (tuple, list)):
@@ -282,7 +283,7 @@ def make_excel(data, sheet_name):
 # -----------------------------
 # 탭 1~4
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab5, tab4 = st.tabs([
     "📈 날짜별 승하차 인원 추이",
     "🏢 역별 승하차 인원 비교",
     "📅 일별 승하차 인원 분석",
@@ -320,7 +321,7 @@ with tab1:
         color_discrete_map=station_color_map,
         line_dash_map={"승차인원": "solid", "하차인원": "dash"},
         markers=False,
-        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "역명":"역명", "구분":"승하차 구분"}
+        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "역명":"역명", "구분":""}
     )
     fig.update_layout(
         hovermode="x unified", plot_bgcolor="white",
@@ -341,7 +342,7 @@ with tab2:
     fig = px.bar(
         station_long, x="역명", y="인원수", color="역명",
         barmode="group", facet_col="구분",
-        labels={"역명":"역명", "인원수":"인원수(명)", "구분":"승하차 구분"}
+        labels={"역명":"역명", "인원수":"인원수(명)", "구분":""}
     )
     fig.update_layout(
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
@@ -362,7 +363,7 @@ with tab3:
     fig = px.bar(
         daily_station_long, x="운행일자", y="인원수", color="역명",
         barmode="group", facet_col="구분",
-        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "역명":"역명", "구분":"승하차 구분"}
+        labels={"운행일자":"운행일자", "인원수":"인원수(명)", "역명":"역명", "구분":""}
     )
     fig.update_layout(
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
