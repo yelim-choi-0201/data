@@ -283,12 +283,12 @@ def make_excel(data, sheet_name):
 # -----------------------------
 # 탭 1~4
 # -----------------------------
-tab1, tab2, tab3, tab5, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📈 날짜별 승하차 인원 추이",
     "🏢 역별 승하차 인원 비교",
     "📅 일별 승하차 인원 분석",
-    "📋 역명 및 운행일자별 데이터",
-    "🗓️ 평일·주말 수송량 비교"
+    "🗓️ 평일·주말 수송량 비교",
+    "📋 역명 및 운행일자별 승하차 데이터"
 ])
 
 with tab1:
@@ -327,6 +327,7 @@ with tab1:
         hovermode="x unified", plot_bgcolor="white",
         paper_bgcolor="rgba(0,0,0,0)", legend_title_text=""
     )
+    fig.update_xaxes(tickformat="%Y-%m-%d", ticklabelmode="period")
     st.plotly_chart(fig, use_container_width=True)
     st.download_button(
         "📥 날짜별 승하차 통계 Excel 다운로드",
@@ -348,7 +349,22 @@ with tab2:
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
         legend_title_text="", xaxis_tickangle=-35
     )
-    st.plotly_chart(fig, use_container_width=True)
+    chart_col, pie_col = st.columns([2, 1])
+    with chart_col:
+        st.plotly_chart(fig, use_container_width=True)
+    with pie_col:
+        pie_data = pd.DataFrame({
+            "승하차 구분": ["승차 인원", "하차 인원"],
+            "인원수": [station["전철승차인원수"].sum(), station["전철하차인원수"].sum()]
+        })
+        pie_fig = px.pie(
+            pie_data, names="승하차 구분", values="인원수",
+            color="승하차 구분", color_discrete_map={"승차 인원":"#A9D8F5", "하차 인원":"#F5C9D8"},
+            hole=0.35
+        )
+        pie_fig.update_traces(textinfo="label+percent", textposition="inside")
+        pie_fig.update_layout(plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)", legend_title_text="")
+        st.plotly_chart(pie_fig, use_container_width=True)
     st.download_button(
         "📥 역별 승하차 통계 Excel 다운로드",
         data=make_excel(station, "역별 통계"),
@@ -369,6 +385,7 @@ with tab3:
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
         legend_title_text="", xaxis_tickangle=-35
     )
+    fig.update_xaxes(tickformat="%Y-%m-%d")
     st.plotly_chart(fig, use_container_width=True)
     st.download_button(
         "📥 일별 승하차 분석 Excel 다운로드",
@@ -378,7 +395,7 @@ with tab3:
         key="download_daily_analysis"
     )
 
-with tab4:
+with tab5:
     st.subheader("역명 및 운행일자별 승하차 데이터")
     display = grouped.copy()
     display["운행일자"] = display["운행일자"].dt.strftime("%Y-%m-%d")
@@ -391,8 +408,8 @@ with tab4:
         key="download_grouped"
     )
 
-with tab5:
-    st.subheader("평일·주말 일평균 수송량 비교")
+with tab4:
+    st.subheader("평일·주말 수송량 비교")
     st.caption("수송량은 승차 인원과 하차 인원의 합계이며, 평일(월~금)과 주말(토~일)의 날짜별 평균을 비교합니다.")
 
     weekday_map = {"월": "평일", "화": "평일", "수": "평일", "목": "평일", "금": "평일", "토": "주말", "일": "주말"}
