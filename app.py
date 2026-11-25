@@ -51,7 +51,15 @@ div[data-testid="stMetricLabel"] {
     font-size:clamp(12px,1.1vw,16px) !important; white-space:normal !important;
 }
 div[data-testid="stDataFrame"] {border:1px solid #E5EDF5; border-radius:12px;}
-div[data-testid="stCheckbox"] label {padding:5px 9px; border-radius:10px;}
+div[data-testid="stCheckbox"] {margin:0 !important; padding:0 !important;}
+div[data-testid="stCheckbox"] label {
+    background:#FFFFFF; border:1px solid #C9DDEE; border-radius:11px;
+    padding:3px 7px !important; min-height:32px; margin-bottom:2px;
+    transition:all .15s ease;
+}
+div[data-testid="stCheckbox"] label:hover {background:#E8F4FC; border-color:#91C8EA;}
+div[data-testid="stCheckbox"] label p {font-size:13px !important; margin:0 !important;}
+
 @media print { section[data-testid="stSidebar"], header, footer, .stDownloadButton, button {display:none !important;} .block-container {max-width:100% !important;} }
 </style>
 """, unsafe_allow_html=True)
@@ -158,54 +166,20 @@ st.sidebar.caption("조회할 역과 기간을 선택하세요.")
 
 station_list = sorted(df["역명"].unique().tolist())
 default_stations = ["죽전"] if "죽전" in station_list else station_list[:1]
-
-# 역명 체크박스를 버튼처럼 보이도록 배치
-st.sidebar.markdown("""
-<style>
-section[data-testid="stSidebar"] div[data-testid="stCheckbox"] {
-    margin: 0 0 2px 0 !important;
-    padding: 0 !important;
-}
-section[data-testid="stSidebar"] div[data-testid="stCheckbox"] > label {
-    display: flex !important;
-    align-items: center !important;
-    width: 100% !important;
-    min-height: 30px !important;
-    padding: 3px 7px !important;
-    margin: 0 !important;
-    border: 1px solid #D7E6F2 !important;
-    border-radius: 8px !important;
-    background: #FFFFFF !important;
-    transition: background .15s ease, border-color .15s ease;
-}
-section[data-testid="stSidebar"] div[data-testid="stCheckbox"]:has(input:checked) > label {
-    background: #D9ECF8 !important;
-    border: 1px solid #83BDE0 !important;
-    color: #244E6A !important;
-    font-weight: 700 !important;
-}
-section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p {
-    font-size: 13px !important;
-    margin: 0 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-station_cols = st.sidebar.columns(2, gap="small")
+st.sidebar.markdown("### 🏢 역명 선택")
 selected_stations = []
+# 역명 선택을 버튼형 체크박스로 표시하고, 3열로 간격을 줄입니다.
+station_cols = st.sidebar.columns(3, gap="small")
 for i, name in enumerate(station_list):
-    with station_cols[i % 2]:
-        checked = st.checkbox(
-            name, value=(name in default_stations),
-            key=f"station_{i}_{name}"
-        )
+    with station_cols[i % 3]:
+        checked = st.checkbox(name, value=(name in default_stations), key=f"station_{i}_{name}")
         if checked:
             selected_stations.append(name)
 
 min_date = df["운행일자"].min().date()
 max_date = df["운행일자"].max().date()
 
-# 기본 조회기간은 2026년(데이터 범위 내)
+# 기본 조회기간은 2026년으로 설정하되, 실제 데이터 범위 안에서 지정
 year_2026_start = max(min_date, pd.Timestamp("2026-01-01").date())
 year_2026_end = min(max_date, pd.Timestamp("2026-12-31").date())
 if year_2026_start <= year_2026_end:
@@ -213,97 +187,21 @@ if year_2026_start <= year_2026_end:
 else:
     default_date_range = (min_date, max_date)
 
-# Streamlit 기본 date_input은 달력을 항상 펼칠 수 없으므로,
-# 사이드바에 상시 표시되는 월간 달력을 직접 구성
-if "calendar_start" not in st.session_state:
-    st.session_state.calendar_start = default_date_range[0]
-if "calendar_end" not in st.session_state:
-    st.session_state.calendar_end = default_date_range[1]
-if "calendar_month" not in st.session_state:
-    st.session_state.calendar_month = pd.Timestamp(default_date_range[0]).replace(day=1).date()
-if "calendar_selecting_end" not in st.session_state:
-    st.session_state.calendar_selecting_end = False
-
-st.sidebar.markdown("### 📅 운행일자 선택")
-st.sidebar.caption(
-    f"선택 기간: {st.session_state.calendar_start:%Y-%m-%d} ~ "
-    f"{st.session_state.calendar_end:%Y-%m-%d}"
+selected_dates = st.sidebar.date_input(
+    "📅 운행일자 선택", value=default_date_range,
+    min_value=min_date, max_value=max_date, format="YYYY/MM/DD"
 )
+st.sidebar.caption("※ Streamlit 기본 달력은 펼침 상태 고정 기능을 제공하지 않아, 날짜 선택 시 달력 버튼을 눌러 열어야 합니다.")
 
-nav_left, nav_title, nav_right = st.sidebar.columns([1, 3, 1])
-with nav_left:
-    if st.button("◀", key="calendar_prev", use_container_width=True):
-        m = pd.Timestamp(st.session_state.calendar_month) - pd.DateOffset(months=1)
-        st.session_state.calendar_month = m.date().replace(day=1)
-        st.rerun()
-with nav_title:
-    st.markdown(
-        f"<div style='text-align:center;padding-top:7px;font-weight:700;'>"
-        f"{st.session_state.calendar_month:%Y년 %m월}</div>",
-        unsafe_allow_html=True
-    )
-with nav_right:
-    if st.button("▶", key="calendar_next", use_container_width=True):
-        m = pd.Timestamp(st.session_state.calendar_month) + pd.DateOffset(months=1)
-        st.session_state.calendar_month = m.date().replace(day=1)
-        st.rerun()
-
-calendar_month = pd.Timestamp(st.session_state.calendar_month)
-month_start = calendar_month.replace(day=1)
-month_end = (month_start + pd.offsets.MonthEnd(0)).date()
-calendar_start_weekday = month_start.weekday()
-days_in_month = month_end.day
-
-weekday_headers = st.sidebar.columns(7, gap="small")
-for col, day_name in zip(weekday_headers, ["월", "화", "수", "목", "금", "토", "일"]):
-    col.markdown(
-        f"<div style='text-align:center;font-size:11px;font-weight:700;color:#668096;'>{day_name}</div>",
-        unsafe_allow_html=True
-    )
-
-calendar_cells = [None] * calendar_start_weekday + [
-    month_start.date() + pd.Timedelta(days=i) for i in range(days_in_month)
-]
-while len(calendar_cells) % 7:
-    calendar_cells.append(None)
-
-for week_idx in range(len(calendar_cells) // 7):
-    week_cols = st.sidebar.columns(7, gap="small")
-    for day_idx in range(7):
-        day = calendar_cells[week_idx * 7 + day_idx]
-        with week_cols[day_idx]:
-            if day is None or day < min_date or day > max_date:
-                st.markdown("<div style='height:29px'></div>", unsafe_allow_html=True)
-            else:
-                in_range = st.session_state.calendar_start <= day <= st.session_state.calendar_end
-                label = f"●{day.day}" if in_range else str(day.day)
-                if st.button(
-                    label, key=f"calendar_day_{day.isoformat()}",
-                    use_container_width=True,
-                    type="primary" if in_range else "secondary"
-                ):
-                    if not st.session_state.calendar_selecting_end:
-                        st.session_state.calendar_start = day
-                        st.session_state.calendar_end = day
-                        st.session_state.calendar_selecting_end = True
-                    else:
-                        first = st.session_state.calendar_start
-                        st.session_state.calendar_start = min(first, day)
-                        st.session_state.calendar_end = max(first, day)
-                        st.session_state.calendar_selecting_end = False
-                    st.rerun()
-
-if st.session_state.calendar_selecting_end:
-    st.sidebar.caption("종료 날짜를 달력에서 선택하세요.")
+if isinstance(selected_dates, (tuple, list)):
+    if len(selected_dates) == 2:
+        start_date, end_date = selected_dates
+    elif len(selected_dates) == 1:
+        start_date = end_date = selected_dates[0]
+    else:
+        start_date, end_date = min_date, max_date
 else:
-    if st.sidebar.button("날짜 선택 초기화", key="calendar_reset"):
-        st.session_state.calendar_start = default_date_range[0]
-        st.session_state.calendar_end = default_date_range[1]
-        st.session_state.calendar_selecting_end = False
-        st.rerun()
-
-start_date = st.session_state.calendar_start
-end_date = st.session_state.calendar_end
+    start_date = end_date = selected_dates
 
 if not selected_stations:
     st.warning("사이드바에서 역명을 한 개 이상 선택해 주세요.")
@@ -451,27 +349,18 @@ with tab1:
 
 with tab2:
     st.subheader("역별 승하차 인원 비교")
-    # 역별 승차·하차 막대를 한 축에서 나란히 표시해 역 사이의 과도한 공백을 줄임
-    station_compare_long = station.melt(
-        id_vars=["역명"],
-        value_vars=["전철승차인원수", "전철하차인원수"],
-        var_name="구분", value_name="인원수"
-    )
-    station_compare_long["구분"] = station_compare_long["구분"].map({
-        "전철승차인원수": "승차인원",
-        "전철하차인원수": "하차인원"
-    })
+    station_long = make_long(station, "역명")
+    station_long["구분"] = station_long["구분"].map({"승차인원수":"승차 인원", "하차인원수":"하차 인원"})
     fig = px.bar(
-        station_compare_long, x="역명", y="인원수", color="구분",
+        station_long, x="역명", y="인원수", color="구분",
         barmode="group",
-        color_discrete_map={"승차인원": "#A9D8F5", "하차인원": "#F5C9D8"},
-        category_orders={"역명": station["역명"].tolist(), "구분": ["승차인원", "하차인원"]},
-        labels={"역명": "역명", "인원수": "인원수(명)", "구분": ""}
+        color_discrete_map={"승차 인원":"#A9D8F5", "하차 인원":"#F5C9D8"},
+        labels={"역명":"역명", "인원수":"인원수(명)", "구분":"승하차 구분"}
     )
     fig.update_layout(
         plot_bgcolor="white", paper_bgcolor="rgba(0,0,0,0)",
-        legend_title_text="", bargap=0.16, bargroupgap=0.04,
-        xaxis_tickangle=0
+        legend_title_text="", xaxis_tickangle=0,
+        bargap=0.18, bargroupgap=0.04
     )
     fig.update_xaxes(tickangle=0, automargin=True)
     chart_col, pie_col = st.columns([2, 1])
